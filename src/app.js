@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 import {
   book, calendar, cancel, describe, drawWinner, enter, markDraw, readName, unmarkDraw, withdraw,
 } from './cabin.js';
-import { calendarPage, drawPage, managerPage, messagePage } from './pages.js';
+import { calendarPage, drawPage, logPage, managerPage, messagePage } from './pages.js';
 import { currentWeek, isWeekId } from './weeks.js';
 
 const HTML = 'text/html; charset=utf-8';
@@ -73,6 +73,7 @@ export function createApp({ store, now = () => new Date() }) {
     if (request.method === 'GET') {
       if (pathname === '/') return showCalendar();
       if (pathname === '/kontorsjef') return showManager();
+      if (pathname === '/logg') return send(200, logPage({ log: store.state.log ?? [], name }));
       if ((match = /^\/trekning\/([^/]+)$/.exec(pathname))) return showDraw(match[1]);
       if (FILES[pathname]) {
         const file = await readFile(new URL(`../public${pathname}`, import.meta.url));
@@ -112,7 +113,7 @@ export function createApp({ store, now = () => new Date() }) {
     if ((match = /^\/trekning\/([^/]+)\/trekk$/.exec(pathname))) {
       const week = match[1];
       const result = form.get('klar') === 'ja'
-        ? store.change(drawWinner, { ...wish, week })
+        ? store.change(drawWinner, { ...wish, week, by: name })
         : { ok: false, status: 400, message: 'Kryss av for at alle som skal se på, er her.' };
 
       // The draw page's script asks for the answer as data, to show it its own way.
@@ -124,12 +125,12 @@ export function createApp({ store, now = () => new Date() }) {
     }
 
     if (pathname === '/kontorsjef/trekningsuker') {
-      const result = store.change(markDraw, { ...wish, week: form.get('uke') ?? '', label: form.get('navn') ?? '' });
+      const result = store.change(markDraw, { ...wish, week: form.get('uke') ?? '', label: form.get('navn') ?? '', by: name });
       return result.ok ? goTo('/kontorsjef') : showManager(result.status, result.message);
     }
 
     if ((match = /^\/kontorsjef\/trekningsuker\/([^/]+)\/fjern$/.exec(pathname))) {
-      const result = store.change(unmarkDraw, { ...wish, week: match[1] });
+      const result = store.change(unmarkDraw, { ...wish, week: match[1], by: name });
       return result.ok ? goTo('/kontorsjef') : showManager(result.status, result.message);
     }
 

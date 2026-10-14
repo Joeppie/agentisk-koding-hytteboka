@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  book, calendar, cancel, drawWinner, emptyState, enter, firstState, HORIZON, markDraw, readName, sameName,
+  book, calendar, cancel, drawWinner, emptyState, enter, firstState, HORIZON, KEEP, markDraw, readName, sameName,
   unmarkDraw, withdraw,
 } from '../src/cabin.js';
+import { addWeeks } from '../src/weeks.js';
 
 // The week the tests happen in: 12 to 18 October 2026.
 const TODAY = '2026-W42';
@@ -210,9 +211,18 @@ describe('drawing the winner', () => {
     assert.equal(state.bookings[EASTER], undefined);
     assert.deepEqual(state.draws[EASTER].entries.map((entry) => entry.name), ['Kari Hansen', 'Per Olsen']);
 
-    assert.equal(enter(state, as('Nina Berg', EASTER)).ok, true, 'the draw is open again');
-    assert.deepEqual(draw(state, () => 2), { ok: true, winner: 2, entries: ['Kari Hansen', 'Per Olsen', 'Nina Berg'] });
-    assert.equal(state.bookings[EASTER].name, 'Nina Berg');
+    refused(state, enter, as('Nina Berg', EASTER), /Påmeldingen til uke 12 er stengt/);
+    refused(state, enter, as('Ola Nordmann', EASTER), /Påmeldingen til uke 12 er stengt/);
+    assert.deepEqual(draw(state, () => 1), { ok: true, winner: 1, entries: ['Kari Hansen', 'Per Olsen'] });
+    assert.equal(state.bookings[EASTER].name, 'Per Olsen');
+  });
+
+  test('a draw nobody is left in can be made an ordinary week again', () => {
+    const state = bookWithEaster('Ola Nordmann');
+    draw(state, () => 0);
+    cancel(state, as('Ola Nordmann', EASTER));
+    refused(state, drawWinner, { week: EASTER, today: TODAY, now: NOW }, /Ingen har meldt seg på/);
+    assert.equal(unmarkDraw(state, { week: EASTER, today: TODAY }).ok, true);
   });
 });
 
@@ -289,5 +299,54 @@ describe('the book as it is shown', () => {
     // The week after Easter 2027. Easter 2028 is in week 15, 54 weeks later.
     const state = firstState(new Date('2027-03-29T12:00:00Z'));
     assert.deepEqual(Object.keys(state.draws), ['2028-W08']);
+  });
+});
+
+describe('the log', () => {
+  const what = (state) => state.log.map((entry) => `${entry.what} ${entry.name ?? ''}`.trim());
+
+  test('every change is written down, with who and when', () => {
+    const state = emptyState();
+    book(state, as('Ola Nordmann', AUTUMN));
+    cancel(state, as('Ola Nordmann', AUTUMN));
+    markDraw(state, { week: EASTER, label: 'Påske', today: TODAY, now: NOW, by: 'Gro Berg' });
+    enter(state, as('Kari Hansen', EASTER));
+    enter(state, as('per olsen', EASTER));
+    withdraw(state, as('Per Olsen', EASTER));
+
+    assert.deepEqual(what(state), [
+      'book Ola Nordmann', 'cancel Ola Nordmann', 'markDraw', 'enter Kari Hansen', 'enter per olsen', 'withdraw per olsen',
+    ]);
+    assert.deepEqual(state.log[2], { at: NOW, week: EASTER, what: 'markDraw', by: 'Gro Berg' });
+  });
+
+  test('a draw is written down so anyone can check it: who was in it, who won, and who pressed', () => {
+    const state = bookWithEaster('Ola Nordmann', 'Kari Hansen');
+    drawWinner(state, { week: EASTER, today: TODAY, now: NOW, by: 'Gro Berg', pick: () => 1 });
+    assert.deepEqual(state.log.at(-1), {
+      at: NOW, week: EASTER, what: 'draw', name: 'Kari Hansen', by: 'Gro Berg', entries: ['Ola Nordmann', 'Kari Hansen'], winner: 1,
+    });
+  });
+
+  test('a refusal writes nothing', () => {
+    const state = bookWithEaster('Ola Nordmann');
+    const before = state.log.length;
+    refused(state, enter, as('Ola Nordmann', EASTER), /allerede påmeldt/);
+    assert.equal(state.log.length, before);
+  });
+
+  test('a year after a week is over, everything about it is forgotten', () => {
+    const state = emptyState();
+    book(state, as('Ola Nordmann', AUTUMN));
+    state.draws[AUTUMN] = { label: '', entries: [] };
+    const atNow = (week, today) => ({ name: 'Per Olsen', week, today, now: NOW });
+
+    book(state, atNow(addWeeks(AUTUMN, KEEP + 1), addWeeks(AUTUMN, KEEP)));
+    assert.deepEqual(what(state), ['book Ola Nordmann', 'book Per Olsen'], `kept for ${KEEP} weeks after`);
+
+    book(state, atNow(addWeeks(AUTUMN, KEEP + 2), addWeeks(AUTUMN, KEEP + 1)));
+    assert.deepEqual(what(state), ['book Per Olsen', 'book Per Olsen'], 'then forgotten');
+    assert.deepEqual(Object.keys(state.bookings), [addWeeks(AUTUMN, KEEP + 1), addWeeks(AUTUMN, KEEP + 2)]);
+    assert.deepEqual(state.draws, {});
   });
 });

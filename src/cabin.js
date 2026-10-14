@@ -3,10 +3,18 @@
 // Everything that is stored is one object:
 //
 //   bookings: { [week]: { name, at } }                       who has the cabin that week
-//   draws:    { [week]: { label, entries: [{ name, at }] } } the weeks a winner is drawn for
+//   draws:    { [week]: { label, entries: [{ name, at }], closed? } } the weeks a winner is drawn for
+//   log:      [{ at, week, what, name?, by?, entries?, winner? }]   what was done, oldest first
 //
 // A week has at most one booking, since bookings are kept by week.
 // A draw is done when its week has a booking: that booking is the winner, and its `at` is when it was drawn.
+// A draw is `closed` once a winner has given the week up: it is drawn again among those who were in it,
+// and nobody can enter after seeing who won the first time.
+//
+// The log is there so anyone can see afterwards that bookings and draws went as they should.
+// It holds only what that needs: the week, what was done, the names involved and when. Each rule that
+// says yes adds to it; a refusal adds nothing. `by` is the name of whoever pressed, where that is not the
+// person the change is about. Nothing about a week is kept more than KEEP weeks after it is over.
 //
 // Each rule takes the state and what someone wants, and either changes the state and answers
 // { ok: true }, or leaves it as it was and answers { ok: false, status, message } with words for the person.
@@ -17,11 +25,14 @@ import { addWeeks, currentWeek, easterSunday, isWeekId, weekIdOf, weekNumber, we
 /** How many weeks are shown and can be booked, counting the one we are in. */
 export const HORIZON = 52;
 
+/** How many weeks after a week is over everything about it is kept: long enough to settle a complaint about it. */
+export const KEEP = 52;
+
 const NAME_LENGTH = 60;
 const LABEL_LENGTH = 40;
 
 export function emptyState() {
-  return { bookings: {}, draws: {} };
+  return { bookings: {}, draws: {}, log: [] };
 }
 
 /** What the book holds the first time it is opened: the weeks Gro named, set up for a draw. */
@@ -78,11 +89,12 @@ export function book(state, { week, name, today, now }) {
   }
 
   state.bookings[week] = { name: readName(name), at: now };
+  record(state, today, { at: now, week, what: 'book', name: readName(name) });
   return done();
 }
 
 /** Giving a week up. A week that was won in a draw goes back to be drawn among the others. */
-export function cancel(state, { week, name, today }) {
+export function cancel(state, { week, name, today, now }) {
   const problem = weekProblem(week, today) ?? nameProblem(name);
   if (problem) return problem;
 
@@ -92,7 +104,11 @@ export function cancel(state, { week, name, today }) {
 
   delete state.bookings[week];
   const draw = state.draws[week];
-  if (draw) draw.entries = draw.entries.filter((entry) => !sameName(entry.name, name));
+  if (draw) {
+    draw.entries = draw.entries.filter((entry) => !sameName(entry.name, name));
+    draw.closed = true;
+  }
+  record(state, today, { at: now, week, what: 'cancel', name: booking.name });
   return done();
 }
 
@@ -102,19 +118,23 @@ export function enter(state, { week, name, today, now }) {
 
   const draw = state.draws[week];
   if (isEntered(draw, name)) return refuse(`Du er allerede påmeldt trekningen om ${uke(week)}.`);
+  if (draw.closed) return refuse(`Påmeldingen til ${uke(week)} er stengt. Den trekkes på nytt blant dem som var med.`);
 
   draw.entries.push({ name: readName(name), at: now });
+  record(state, today, { at: now, week, what: 'enter', name: readName(name) });
   return done();
 }
 
-export function withdraw(state, { week, name, today }) {
+export function withdraw(state, { week, name, today, now }) {
   const problem = weekProblem(week, today) ?? nameProblem(name) ?? drawProblem(state, week);
   if (problem) return problem;
 
   const draw = state.draws[week];
   if (!isEntered(draw, name)) return refuse(`Du er ikke påmeldt trekningen om ${uke(week)}.`);
 
-  draw.entries = draw.entries.filter((entry) => !sameName(entry.name, name));
+  const leaving = draw.entries.find((entry) => sameName(entry.name, name));
+  draw.entries = draw.entries.filter((entry) => entry !== leaving);
+  record(state, today, { at: now, week, what: 'withdraw', name: leaving.name });
   return done();
 }
 
@@ -122,7 +142,7 @@ export function withdraw(state, { week, name, today }) {
  * Draws the winner: one of those entered, each with the same chance, and books the week for them.
  * `pick(count)` answers a whole number from 0 up to, not including, count.
  */
-export function drawWinner(state, { week, today, now, pick = randomInt }) {
+export function drawWinner(state, { week, today, now, by, pick = randomInt }) {
   const problem = weekProblem(week, today) ?? drawProblem(state, week);
   if (problem) return problem;
 
@@ -130,11 +150,13 @@ export function drawWinner(state, { week, today, now, pick = randomInt }) {
   if (entries.length === 0) return refuse(`Ingen har meldt seg på trekningen om ${uke(week)} ennå.`);
 
   const winner = pick(entries.length);
-  state.bookings[week] = { name: entries[winner].name, at: now };
-  return done({ winner, entries: entries.map((entry) => entry.name) });
+  const names = entries.map((entry) => entry.name);
+  state.bookings[week] = { name: names[winner], at: now };
+  record(state, today, { at: now, week, what: 'draw', name: names[winner], by: byName(by), entries: names, winner });
+  return done({ winner, entries: names });
 }
 
-export function markDraw(state, { week, label, today }) {
+export function markDraw(state, { week, label, today, now, by }) {
   const problem = weekProblem(week, today);
   if (problem) return problem;
 
@@ -145,10 +167,11 @@ export function markDraw(state, { week, label, today }) {
   if (booking) return refuse(`${Uke(week)} er allerede booket av ${booking.name}, så den kan det ikke trekkes lodd om.`);
 
   state.draws[week] = { label: title, entries: [] };
+  record(state, today, { at: now, week, what: 'markDraw', by: byName(by) });
   return done();
 }
 
-export function unmarkDraw(state, { week, today }) {
+export function unmarkDraw(state, { week, today, now, by }) {
   const problem = weekProblem(week, today) ?? drawProblem(state, week);
   if (problem) return problem;
 
@@ -158,6 +181,7 @@ export function unmarkDraw(state, { week, today }) {
   }
 
   delete state.draws[week];
+  record(state, today, { at: now, week, what: 'unmarkDraw', by: byName(by) });
   return done();
 }
 
@@ -167,6 +191,20 @@ export function uke(week) {
 
 export function Uke(week) {
   return `Uke ${weekNumber(week)}`;
+}
+
+/** Writes down what was done, and forgets every week that has been over for more than KEEP weeks. */
+function record(state, today, entry) {
+  const oldest = addWeeks(today, -KEEP);
+  state.log = (state.log ?? []).filter((earlier) => earlier.week >= oldest);
+  state.log.push(entry);
+  for (const week of Object.keys(state.bookings)) if (week < oldest) delete state.bookings[week];
+  for (const week of Object.keys(state.draws)) if (week < oldest) delete state.draws[week];
+}
+
+/** Who pressed, when they gave a name. Nothing is written when they did not. */
+function byName(by) {
+  return readName(by) || undefined;
 }
 
 function isOpen(week, today) {

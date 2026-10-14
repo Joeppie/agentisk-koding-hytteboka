@@ -60,7 +60,8 @@ function weekCard({ week, booking, draw }, { name, today }) {
   } else if (state === 'draw') {
     const entered = Boolean(name && isEntered(draw, name));
     status = html`${countEntered(draw.entries.length)}${entered ? html`<br><strong>Du er med i trekningen</strong>` : ''}`;
-    if (name) action = entered ? post('meld-av', 'Meld meg av', true) : post('meld-pa', 'Meld meg på');
+    if (name && entered) action = post('meld-av', 'Meld meg av', true);
+    else if (name && !draw.closed) action = post('meld-pa', 'Meld meg på');
   } else {
     status = mine ? 'Du vant trekningen' : html`<span class="person">${booking.name}</span> vant trekningen`;
     if (mine) action = post('avbestill', 'Si fra deg uka', true);
@@ -183,6 +184,45 @@ function drawRow({ week, draw, booking }) {
     </li>`;
 }
 
+const DONE = {
+  book: (entry) => html`<span class="person">${entry.name}</span> booket uka.`,
+  cancel: (entry) => html`<span class="person">${entry.name}</span> sa fra seg uka.`,
+  enter: (entry) => html`<span class="person">${entry.name}</span> meldte seg på trekningen.`,
+  withdraw: (entry) => html`<span class="person">${entry.name}</span> meldte seg av trekningen.`,
+  draw: (entry) => html`Trukket blant ${entry.entries.length}: ${entry.entries.map((name, index) =>
+    html`${index > 0 ? ', ' : ''}${index === entry.winner ? html`<strong>${name}</strong>` : name}`)}. Uka gikk til <span class="person">${entry.name}</span>.`,
+  markDraw: () => 'Uka ble gjort til trekningsuke.',
+  unmarkDraw: () => 'Uka ble gjort om til vanlig uke.',
+};
+
+/** What has been done in the book, newest first, and what is kept about people and why. */
+export function logPage({ log, name }) {
+  return page({ title: 'Loggen', name }, html`
+    <h1>Loggen</h1>
+    <p class="lead">Alt som er gjort i hytteboka, så alle kan se at bookinger og trekninger gikk riktig for seg.</p>
+
+    <section class="panel">
+      <h2>Dette lagres, og derfor</h2>
+      <ul>
+        <li>Navnet som står på det som ble gjort, hvilken uke, hva som ble gjort, og når. Ved en trekning også hvem som var med, og hvem som trykket.</li>
+        <li>Ikke IP-adresse, nettleser eller noe annet om deg eller maskinen din. Forsøk som ble avvist, lagres ikke.</li>
+        <li>Loggen er her for at trekninger og bookinger skal kunne etterprøves. Den brukes ikke til å følge med på hva den enkelte gjør.</li>
+        <li>Alt om en uke slettes av seg selv et år etter at uka er over.</li>
+        <li>Vil du se, rette eller slette noe om deg, spør kontorsjefen.</li>
+      </ul>
+    </section>
+
+    ${log.length === 0 ? html`<p>Ingenting er gjort ennå.</p>` : html`
+      <ol class="log" reversed>
+        ${[...log].reverse().map((entry) => html`
+          <li>
+            <p><strong>${Uke(entry.week)}</strong> · ${formatMoment(entry.at)}</p>
+            <p>${DONE[entry.what]?.(entry) ?? entry.what}${entry.by ? html` <span class="by">(${entry.by} trykket)</span>` : ''}</p>
+          </li>`)}
+      </ol>`}
+  `);
+}
+
 export function messagePage({ title, text, name }) {
   return page({ title, name }, html`
     <h1>${title}</h1>
@@ -213,7 +253,7 @@ ${stage ? html`<body class="stage">${content}</body>` : html`<body class="page">
     </form>` : ''}
 </header>
 <main class="content">${content}</main>
-<footer class="bottom"><a href="/">Kalenderen</a> <a href="/kontorsjef">For kontorsjefen</a></footer>
+<footer class="bottom"><a href="/">Kalenderen</a> <a href="/kontorsjef">For kontorsjefen</a> <a href="/logg">Loggen</a></footer>
 </body>`}
 </html>
 `.toString();

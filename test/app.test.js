@@ -362,3 +362,23 @@ describe('what the server is careful about', () => {
     assert.equal((await visitor.get('/../package.json')).status, 404);
   });
 });
+
+describe('the log page', () => {
+  test('shows what was done and how it was drawn, with the name of whoever pressed', async () => {
+    await ola.post(`/uker/${AUTUMN}/book`);
+    await person('Kari Hansen').post(`/uker/${EASTER}/meld-pa`);
+    await person('Gro Berg').post(`/trekning/${EASTER}/trekk`, { klar: 'ja' });
+
+    const text = await (await visitor.get('/logg')).text();
+    assert.match(text, /Ola Nordmann<\/span> booket uka/);
+    assert.match(text, /Trukket blant 1: <strong>Kari Hansen<\/strong>/);
+    assert.match(text, /Gro Berg trykket/);
+    assert.match(text, /Ikke IP-adresse/);
+  });
+
+  test('keeps nothing about the browser or where it is', async () => {
+    await ola.post(`/uker/${AUTUMN}/book`, {}, { 'User-Agent': 'Testleser/1.0', 'X-Forwarded-For': '10.1.2.3' });
+    const stored = readFileSync(file, 'utf8');
+    assert.doesNotMatch(stored, /Testleser|10\.1\.2\.3|127\.0\.0\.1/);
+  });
+});

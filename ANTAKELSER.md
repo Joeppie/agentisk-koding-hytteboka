@@ -37,7 +37,7 @@ Gro var ikke å få tak i før første versjon ble bygget. Her er det jeg ville 
     Antar: i det du trekker. Fram til da kan folk melde seg på og av.
 
 11. **Hva skjer hvis vinneren ikke kan likevel?**
-    Antar: vinneren sier fra seg uka, og du trekker på nytt blant de andre som var påmeldt.
+    Antar: vinneren sier fra seg uka, og du trekker på nytt blant de andre som var påmeldt. Da er påmeldingen stengt: ingen kan melde seg på etter å ha sett hvem som vant, og vinneren kan ikke melde seg på igjen.
 
 12. **Hvor ser kontoret trekningen?**
     Antar: på én felles skjerm, der du trykker på knappen. Showet går på den skjermen. Andre som har siden oppe, ser hvem som vant når de laster den på nytt.
@@ -53,6 +53,17 @@ Gro var ikke å få tak i før første versjon ble bygget. Her er det jeg ville 
 15. **Skal alle se hvem som har booket, og hvem som er med i en trekning?**
     Antar: ja. Navnet står på uka i kalenderen, og alle loddene vises på trekningssiden.
 
+## Logg og personvern
+
+17. **Skal det føres logg?**
+    Antar: ja. Alt som blir gjort, står i en logg som alle kan se på siden «Loggen»: booking, avbestilling, påmelding, avmelding og trekning, med navn, uke og tidspunkt. Ved en trekning står også hvem som var med, hvem som vant, og hvem som trykket. Da kan hvem som helst etterprøve en trekning.
+
+18. **Hva lagres om folk, og hvor lenge?**
+    Antar: bare det loggen trenger. Ingen IP-adresse eller nettleser, og ingen avviste forsøk. Alt om en uke, både bookingen, trekningen og loggen, slettes av seg selv 52 uker etter at uka er over. Det gir tid til å rydde opp i en klage, og til å se hvem som fikk påsken i fjor. Grunnlaget er berettiget interesse (GDPR artikkel 6 nr. 1 f): en rettferdig fordeling som alle kan etterprøve. Behandlingen bør stå i Havbris sin protokoll, og de ansatte bør få vite om den. Det kan dere avgjøre selv, eller sjekke med den som har ansvar for personvern.
+
+19. **Hvem kan se loggen?**
+    Antar: alle, slik som kalenderen. Det eneste nye den viser, er hvem som har meldt seg av en trekning, og hvem som trykket. Loggen skal ikke brukes til å følge med på den enkelte.
+
 ## Drift
 
 16. **Hvor skal siden stå?**
@@ -60,4 +71,4 @@ Gro var ikke å få tak i før første versjon ble bygget. Her er det jeg ville 
 
 ## Ikke med i første versjon
 
-Du har ikke bedt om dette, så det er ikke bygget: innlogging, varsel på e-post, venteliste på vanlige uker, regler for hvem som fikk hva i fjor, historikk over tidligere trekninger, og priser eller betaling.
+Du har ikke bedt om dette, så det er ikke bygget: innlogging, varsel på e-post, venteliste på vanlige uker, regler for hvem som fikk hva i fjor, og priser eller betaling.

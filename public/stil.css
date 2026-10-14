@@ -498,6 +498,26 @@ a:active { color: var(--cabin); }
 .draw-list-title strong { font-size: 1.15rem; }
 .draw-list-title span { color: var(--muted); }
 
+/* The log */
+
+.panel ul { padding-inline-start: 1.25rem; }
+
+.log {
+  display: flex;
+  flex-direction: column;
+  margin-block-start: 1.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.log li {
+  padding-block: 0.75rem;
+  border-block-start: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+.log .by { color: var(--muted); }
+
 .row-actions {
   display: flex;
   flex-wrap: wrap;
