@@ -6,10 +6,11 @@
 
 import { readFile } from 'node:fs/promises';
 import {
-  book, calendar, cancel, describe, drawWinner, enter, markDraw, readName, unmarkDraw, withdraw,
+  book, calendar, cancel, countVotes, currentPeriod, describe, drawWinner, enter, markDraw, readName, unmarkDraw, vote,
+  withdraw,
 } from './cabin.js';
-import { calendarPage, drawPage, managerPage, messagePage } from './pages.js';
-import { currentWeek, isWeekId } from './weeks.js';
+import { calendarPage, drawPage, logPage, managerPage, messagePage, votePage } from './pages.js';
+import { isPeriodId } from './weeks.js';
 
 const HTML = 'text/html; charset=utf-8';
 const JSON_TYPE = 'application/json; charset=utf-8';
@@ -23,6 +24,9 @@ const FILES = {
 
 const WEEK_RULES = { book, avbestill: cancel, 'meld-pa': enter, 'meld-av': withdraw };
 
+// How Easter can be cut, as the vote form names it.
+const CHOICES = { lang: 'long', delt: 'split' };
+
 // The pages load their own files and nothing else, and run no script written into a page.
 const HEADERS = {
   'Cache-Control': 'no-store',
@@ -33,7 +37,7 @@ const HEADERS = {
 const FORM_LIMIT = 10_000;
 
 export function createApp({ store, now = () => new Date() }) {
-  const today = () => currentWeek(now());
+  const today = () => currentPeriod(store.state, now());
 
   async function answer(request, response) {
     const { pathname } = new URL(request.url, 'http://hytteboka');
@@ -58,22 +62,31 @@ export function createApp({ store, now = () => new Date() }) {
       const weeks = calendar(store.state, today());
       send(status, managerPage({
         draws: weeks.filter((entry) => entry.draw),
-        freeWeeks: weeks.filter((entry) => !entry.draw && !entry.booking).map((entry) => entry.week),
+        freeWeeks: weeks.filter((entry) => !entry.draw && !entry.booking),
+        votes: weeks.filter((entry) => entry.vote),
         name,
         message,
       }));
     };
 
     const showDraw = (week, status = 200, message) => {
-      const entry = isWeekId(week) ? describe(store.state, week) : null;
+      const entry = isPeriodId(week) ? describe(store.state, week) : null;
       if (!entry?.draw) return notFound();
       send(status, drawPage({ ...entry, message }));
+    };
+
+    const showVote = (week, status = 200, message) => {
+      const entry = isPeriodId(week) ? describe(store.state, week) : null;
+      if (!entry?.vote) return notFound();
+      send(status, votePage({ ...entry, today: today(), name, message }));
     };
 
     if (request.method === 'GET') {
       if (pathname === '/') return showCalendar();
       if (pathname === '/kontorsjef') return showManager();
+      if (pathname === '/logg') return send(200, logPage({ log: store.state.log ?? [], name }));
       if ((match = /^\/trekning\/([^/]+)$/.exec(pathname))) return showDraw(match[1]);
+      if ((match = /^\/paske\/([^/]+)$/.exec(pathname))) return showVote(match[1]);
       if (FILES[pathname]) {
         const file = await readFile(new URL(`../public${pathname}`, import.meta.url));
         return send(200, file, FILES[pathname], { 'Cache-Control': 'no-cache' });
@@ -112,7 +125,7 @@ export function createApp({ store, now = () => new Date() }) {
     if ((match = /^\/trekning\/([^/]+)\/trekk$/.exec(pathname))) {
       const week = match[1];
       const result = form.get('klar') === 'ja'
-        ? store.change(drawWinner, { ...wish, week })
+        ? store.change(drawWinner, { ...wish, week, by: name })
         : { ok: false, status: 400, message: 'Kryss av for at alle som skal se på, er her.' };
 
       // The draw page's script asks for the answer as data, to show it its own way.
@@ -123,13 +136,21 @@ export function createApp({ store, now = () => new Date() }) {
       return result.ok ? goTo(`/trekning/${week}`) : showDraw(week, result.status, result.message);
     }
 
+    if ((match = /^\/paske\/([^/]+)\/(stem|tell)$/.exec(pathname))) {
+      const [, week, action] = match;
+      const result = action === 'stem'
+        ? store.change(vote, { ...wish, week, name, choice: CHOICES[form.get('valg')] })
+        : store.change(countVotes, { ...wish, week, by: name });
+      return result.ok ? goTo(`/paske/${week}`) : showVote(week, result.status, result.message);
+    }
+
     if (pathname === '/kontorsjef/trekningsuker') {
-      const result = store.change(markDraw, { ...wish, week: form.get('uke') ?? '', label: form.get('navn') ?? '' });
+      const result = store.change(markDraw, { ...wish, week: form.get('uke') ?? '', label: form.get('navn') ?? '', by: name });
       return result.ok ? goTo('/kontorsjef') : showManager(result.status, result.message);
     }
 
     if ((match = /^\/kontorsjef\/trekningsuker\/([^/]+)\/fjern$/.exec(pathname))) {
-      const result = store.change(unmarkDraw, { ...wish, week: match[1] });
+      const result = store.change(unmarkDraw, { ...wish, week: match[1], by: name });
       return result.ok ? goTo('/kontorsjef') : showManager(result.status, result.message);
     }
 

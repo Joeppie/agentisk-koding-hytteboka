@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  addWeeks, currentWeek, easterSunday, formatMoment, formatRange, isWeekId, mondayOf, monthOf, weekIdOf, weekNumber,
-  weeksFrom,
+  addWeeks, currentWeek, easterSunday, formatMoment, formatRange, formatSwap, isoWeekOf, isPeriodId, isWeekId, mondayOf,
+  monthOf, noonInOslo, periodDays, weekIdOf, weekNumber, weeksFrom,
 } from '../src/weeks.js';
 
 const day = (text) => new Date(`${text}T00:00:00Z`);
@@ -66,18 +66,65 @@ test('Easter Sunday falls where the almanac says', () => {
   assert.equal(iso(easterSunday(2038)), '2038-04-25');
 });
 
-test('a week is written with its dates', () => {
-  assert.equal(formatRange('2027-W12'), '22.–28. mars 2027');
-  assert.equal(formatRange('2027-W13'), '29. mars – 4. april 2027');
-  assert.equal(formatRange('2026-W53'), '28. desember 2026 – 3. januar 2027');
-  assert.equal(formatRange('2027-W12', { year: false }), '22.–28. mars');
-  assert.equal(formatRange('2026-W53', { year: false }), '28. desember – 3. januar');
+const days = (id, easter) => {
+  const { from, to } = periodDays(id, easter);
+  return `${iso(from)} ${iso(to)}`;
+};
+
+test('a cabin week runs from the Friday before its Monday to its Friday', () => {
+  assert.equal(days('2026-W42'), '2026-10-09 2026-10-16');
+  assert.equal(days('2027-W08'), '2027-02-19 2027-02-26');
+  assert.equal(days('2027-W01'), '2027-01-01 2027-01-08');
+  assert.equal(days('2027-W11'), '2027-03-12 2027-03-19', 'the week before Easter ends where Easter starts');
 });
 
-test('a week is listed under the month most of it falls in', () => {
-  assert.equal(monthOf('2027-W12'), 'Mars 2027');
-  assert.equal(monthOf('2027-W13'), 'April 2027');
-  assert.equal(monthOf('2026-W53'), 'Desember 2026');
+test('Easter is one long stay, or two halves that swap on the Wednesday', () => {
+  // Easter Sunday 2027 is 28 March: Palm Sunday is the 21st, Easter Monday the 29th.
+  assert.equal(days('2027-W12', 'long'), '2027-03-19 2027-03-29');
+  assert.equal(days('2027-W12', 'split'), '2027-03-19 2027-03-24');
+  assert.equal(days('2027-W12b', 'split'), '2027-03-24 2027-03-29');
+  assert.equal(days('2027-W12', null), '2027-03-19 2027-03-29', 'until the vote is counted, Easter shows as one stay');
+  // Either way the week after is short, from Easter Monday to Friday.
+  assert.equal(days('2027-W13', 'long'), '2027-03-29 2027-04-02');
+  assert.equal(days('2027-W13', 'split'), '2027-03-29 2027-04-02');
+  // A late Easter: Easter Sunday 2038 is 25 April.
+  assert.equal(days('2038-W16', 'long'), '2038-04-16 2038-04-26');
+  assert.equal(days('2038-W16b', 'split'), '2038-04-21 2038-04-26');
+});
+
+test('only Easter has a second half', () => {
+  assert.equal(isPeriodId('2027-W12'), true);
+  assert.equal(isPeriodId('2027-W12b'), true);
+  assert.equal(isPeriodId('2027-W13b'), false);
+  assert.equal(isPeriodId('2027-W12c'), false);
+  assert.equal(isPeriodId('2027-W53b'), false);
+  assert.deepEqual(['2027-W13', '2027-W12b', '2027-W12'].sort(), ['2027-W12', '2027-W12b', '2027-W13']);
+  assert.equal(weekNumber('2027-W12b'), 12);
+  assert.equal(isoWeekOf('2027-W12b'), '2027-W12');
+});
+
+test('the swap is at noon in Norway, summer and winter', () => {
+  assert.equal(noonInOslo(day('2027-01-08')).toISOString(), '2027-01-08T11:00:00.000Z');
+  assert.equal(noonInOslo(day('2027-03-29')).toISOString(), '2027-03-29T10:00:00.000Z');
+  assert.equal(noonInOslo(day('2026-10-23')).toISOString(), '2026-10-23T10:00:00.000Z');
+  assert.equal(noonInOslo(day('2026-10-30')).toISOString(), '2026-10-30T11:00:00.000Z');
+});
+
+test('a week is written with its days', () => {
+  const range = (id, options) => formatRange(...Object.values(periodDays(id)), options);
+  assert.equal(range('2026-W42'), 'fre. 9. – fre. 16. oktober 2026');
+  assert.equal(range('2026-W45'), 'fre. 30. oktober – fre. 6. november 2026');
+  assert.equal(range('2027-W01'), 'fre. 1. – fre. 8. januar 2027');
+  assert.equal(range('2026-W53'), 'fre. 25. desember 2026 – fre. 1. januar 2027');
+  assert.equal(range('2026-W53', { year: false }), 'fre. 25. desember – fre. 1. januar');
+  assert.equal(formatSwap(day('2027-01-08')), 'fredag 8. januar 2027 kl. 12');
+});
+
+test('a week is listed under the month its middle night falls in', () => {
+  const month = (id) => monthOf(...Object.values(periodDays(id)));
+  assert.equal(month('2026-W45'), 'November 2026');
+  assert.equal(month('2026-W53'), 'Desember 2026');
+  assert.equal(month('2027-W01'), 'Januar 2027');
 });
 
 test('a moment is written in Norwegian time', () => {

@@ -2,12 +2,12 @@
 
 import { isEntered, sameName, Uke } from './cabin.js';
 import { html } from './html.js';
-import { formatMoment, formatRange, monthOf, weekNumber } from './weeks.js';
+import { formatMoment, formatRange, formatSwap, monthOf, periodDays } from './weeks.js';
 
 export function calendarPage({ weeks, today, name, message, typedName }) {
   const months = [];
   for (const entry of weeks) {
-    const title = monthOf(entry.week);
+    const title = monthOf(entry.from, entry.to);
     if (months.at(-1)?.title !== title) months.push({ title, weeks: [] });
     months.at(-1).weeks.push(entry);
   }
@@ -18,6 +18,7 @@ export function calendarPage({ weeks, today, name, message, typedName }) {
       <div class="hero-text">
         <h1>Når er hytta ledig?</h1>
         <p>Book en ledig uke. Ukene alle vil ha, trekker vi lodd om: meld deg på, så trekkes vinneren mens kontoret ser på.</p>
+        <p>Hytteuka går fra fredag til fredag. De som reiser, er ute klokka 12, så vaskehjelpen rekker over før neste gjeng kommer.</p>
       </div>
     </section>
 
@@ -28,6 +29,7 @@ export function calendarPage({ weeks, today, name, message, typedName }) {
       <li class="legend--free">Ledig</li>
       <li class="legend--booked">Opptatt</li>
       <li class="legend--draw">Trekning</li>
+      <li class="legend--vote">Avstemning</li>
     </ul>
 
     ${months.map((month) => html`
@@ -41,9 +43,10 @@ export function calendarPage({ weeks, today, name, message, typedName }) {
   `);
 }
 
-function weekCard({ week, booking, draw }, { name, today }) {
+function weekCard({ week, from, to, booking, draw, vote }, { name, today }) {
   const mine = Boolean(booking && name && sameName(booking.name, name));
-  const state = draw ? (booking ? 'drawn' : 'draw') : booking ? 'booked' : 'free';
+  const uncut = Boolean(vote && !vote.result);
+  const state = uncut ? 'vote' : draw ? (booking ? 'drawn' : 'draw') : booking ? 'booked' : 'free';
   const post = (action, label, quiet = false) => html`
     <form method="post" action="/uker/${week}/${action}">
       <button class="button${quiet ? ' button--quiet' : ''}">${label}</button>
@@ -51,7 +54,11 @@ function weekCard({ week, booking, draw }, { name, today }) {
 
   let status;
   let action = '';
-  if (state === 'free') {
+  if (state === 'vote') {
+    status = today < vote.closes
+      ? `Én lang påske, eller delt i to? Stem innen ${formatSwap(periodDays(vote.closes).from)}.`
+      : 'Avstemningen er stengt. Stemmene er ikke talt opp ennå.';
+  } else if (state === 'free') {
     status = 'Ledig';
     if (name) action = post('book', 'Book uka');
   } else if (state === 'booked') {
@@ -60,7 +67,8 @@ function weekCard({ week, booking, draw }, { name, today }) {
   } else if (state === 'draw') {
     const entered = Boolean(name && isEntered(draw, name));
     status = html`${countEntered(draw.entries.length)}${entered ? html`<br><strong>Du er med i trekningen</strong>` : ''}`;
-    if (name) action = entered ? post('meld-av', 'Meld meg av', true) : post('meld-pa', 'Meld meg på');
+    if (name && entered) action = post('meld-av', 'Meld meg av', true);
+    else if (name && !draw.closed) action = post('meld-pa', 'Meld meg på');
   } else {
     status = mine ? 'Du vant trekningen' : html`<span class="person">${booking.name}</span> vant trekningen`;
     if (mine) action = post('avbestill', 'Si fra deg uka', true);
@@ -69,16 +77,18 @@ function weekCard({ week, booking, draw }, { name, today }) {
   return html`
     <li class="week week--${state}${mine ? ' week--mine' : ''}" id="${week}">
       <p class="week-when">
-        <strong>Uke ${weekNumber(week)}</strong>
-        <span>${formatRange(week, { year: false })}</span>
+        <strong>${Uke(week)}</strong>
+        <span>${formatRange(from, to, { year: false })}</span>
       </p>
       ${week === today ? html`<p class="tag">Denne uka</p>` : ''}
-      ${draw ? html`<p class="tag tag--draw">${draw.label ? `Trekning · ${draw.label}` : 'Trekning'}</p>` : ''}
+      ${uncut ? html`<p class="tag tag--vote">Påske · avstemning</p>`
+        : draw ? html`<p class="tag tag--draw">${draw.label ? `Trekning · ${draw.label}` : 'Trekning'}</p>` : ''}
       <p class="week-status">${status}</p>
-      ${action || draw ? html`
+      ${action || draw || vote ? html`
         <div class="week-actions">
           ${action}
-          ${draw ? html`<a href="/trekning/${week}">Se trekningen</a>` : ''}
+          ${vote ? html`<a href="/paske/${week}">${uncut ? 'Stem om påsken' : 'Se avstemningen'}</a>` : ''}
+          ${draw && !uncut ? html`<a href="/trekning/${week}">Se trekningen</a>` : ''}
         </div>` : ''}
     </li>`;
 }
@@ -95,7 +105,7 @@ function nameForm(typedName) {
     </form>`;
 }
 
-export function drawPage({ week, draw, booking, message }) {
+export function drawPage({ week, from, to, draw, booking, message }) {
   const names = draw.entries.map((entry) => entry.name);
   const drawn = Boolean(booking);
 
@@ -103,7 +113,7 @@ export function drawPage({ week, draw, booking, message }) {
     <main class="draw${drawn ? ' is-done' : ''}" data-draw>
       <p class="draw-kicker">Trekning om hytta</p>
       <h1>${draw.label || Uke(week)}</h1>
-      <p class="draw-when">${draw.label ? `${Uke(week)} · ` : ''}${formatRange(week)}</p>
+      <p class="draw-when">${draw.label ? `${Uke(week)} · ` : ''}${formatRange(from, to)}</p>
       ${alert(message)}
 
       ${names.length === 0 ? html`<p class="draw-empty">Ingen har meldt seg på ennå.</p>` : ''}
@@ -133,7 +143,7 @@ export function drawPage({ week, draw, booking, message }) {
   `);
 }
 
-export function managerPage({ draws, freeWeeks, name, message }) {
+export function managerPage({ draws, freeWeeks, votes, name, message }) {
   return page({ title: 'For kontorsjefen', name }, html`
     <h1>For kontorsjefen</h1>
     <p class="lead">Her velger du hvilke uker det skal trekkes lodd om, og åpner trekningen når kontoret er samlet.</p>
@@ -147,12 +157,26 @@ export function managerPage({ draws, freeWeeks, name, message }) {
         </ul>`}
     </section>
 
+    ${votes.length > 0 ? html`
+      <section class="panel">
+        <h2>Påsken</h2>
+        <p>Alle stemmer over om påsken skal være én lang uke eller deles i to. Når avstemningen er stengt, kan stemmene telles opp, og først da kan folk melde seg på trekningen.</p>
+        <ul class="draw-list">
+          ${votes.map(({ week, vote }) => html`
+            <li>
+              <p class="draw-list-title"><strong>Påsken ${week.slice(0, 4)}</strong></p>
+              <p>${vote.result ? resultText(vote.result) : `${countVotes(vote.entries.length)}. Stenger ${formatSwap(periodDays(vote.closes).from)}.`}</p>
+              <div class="row-actions"><a class="button" href="/paske/${week}">Se avstemningen</a></div>
+            </li>`)}
+        </ul>
+      </section>` : ''}
+
     <section class="panel">
       <h2>Trekk lodd om en uke til</h2>
       <form class="fields" method="post" action="/kontorsjef/trekningsuker">
         <label for="uke">Uke</label>
         <select id="uke" name="uke" required>
-          ${freeWeeks.map((week) => html`<option value="${week}">${Uke(week)} · ${formatRange(week)}</option>`)}
+          ${freeWeeks.map(({ week, from, to }) => html`<option value="${week}">${Uke(week)} · ${formatRange(from, to)}</option>`)}
         </select>
         <label for="ukenavn">Hva kaller dere uka? <span class="optional">Kan stå tomt</span></label>
         <input id="ukenavn" name="navn" maxlength="40" placeholder="Høstferie">
@@ -162,13 +186,13 @@ export function managerPage({ draws, freeWeeks, name, message }) {
   `);
 }
 
-function drawRow({ week, draw, booking }) {
+function drawRow({ week, from, to, draw, booking }) {
   const names = draw.entries.map((entry) => entry.name);
   return html`
     <li>
       <p class="draw-list-title">
         <strong>${draw.label || Uke(week)}</strong>
-        <span>${draw.label ? `${Uke(week)} · ` : ''}${formatRange(week)}</span>
+        <span>${draw.label ? `${Uke(week)} · ` : ''}${formatRange(from, to)}</span>
       </p>
       <p>${booking
         ? html`Trukket: <span class="person">${booking.name}</span> vant.`
@@ -181,6 +205,105 @@ function drawRow({ week, draw, booking }) {
           </form>` : ''}
       </div>
     </li>`;
+}
+
+const DONE = {
+  book: (entry) => html`<span class="person">${entry.name}</span> booket uka.`,
+  cancel: (entry) => html`<span class="person">${entry.name}</span> sa fra seg uka.`,
+  enter: (entry) => html`<span class="person">${entry.name}</span> meldte seg på trekningen.`,
+  withdraw: (entry) => html`<span class="person">${entry.name}</span> meldte seg av trekningen.`,
+  draw: (entry) => html`Trukket blant ${entry.entries.length}: ${entry.entries.map((name, index) =>
+    html`${index > 0 ? ', ' : ''}${index === entry.winner ? html`<strong>${name}</strong>` : name}`)}. Uka gikk til <span class="person">${entry.name}</span>.`,
+  vote: (entry) => html`<span class="person">${entry.name}</span> stemte for ${CUTS[entry.choice]}.`,
+  countVotes: (entry) => html`Stemmene om påsken ble talt opp. ${resultText(entry)}`,
+  markDraw: () => 'Uka ble gjort til trekningsuke.',
+  unmarkDraw: () => 'Uka ble gjort om til vanlig uke.',
+};
+
+/** What has been done in the book, newest first, and what is kept about people and why. */
+export function logPage({ log, name }) {
+  return page({ title: 'Loggen', name }, html`
+    <h1>Loggen</h1>
+    <p class="lead">Alt som er gjort i hytteboka, så alle kan se at bookinger og trekninger gikk riktig for seg.</p>
+
+    <section class="panel">
+      <h2>Dette lagres, og derfor</h2>
+      <ul>
+        <li>Navnet som står på det som ble gjort, hvilken uke, hva som ble gjort, og når. Ved en trekning også hvem som var med, og hvem som trykket.</li>
+        <li>Hva hver enkelt stemte om påsken, så alle kan telle etter. Stemmene vises på siden for avstemningen.</li>
+        <li>Ikke IP-adresse, nettleser eller noe annet om deg eller maskinen din. Forsøk som ble avvist, lagres ikke.</li>
+        <li>Loggen er her for at trekninger og bookinger skal kunne etterprøves. Den brukes ikke til å følge med på hva den enkelte gjør.</li>
+        <li>Alt om en uke slettes av seg selv et år etter at uka er over.</li>
+        <li>Vil du se, rette eller slette noe om deg, spør kontorsjefen.</li>
+      </ul>
+    </section>
+
+    ${log.length === 0 ? html`<p>Ingenting er gjort ennå.</p>` : html`
+      <ol class="log" reversed>
+        ${[...log].reverse().map((entry) => html`
+          <li>
+            <p><strong>${Uke(entry.week)}</strong> · ${formatMoment(entry.at)}</p>
+            <p>${DONE[entry.what]?.(entry) ?? entry.what}${entry.by ? html` <span class="by">(${entry.by} trykket)</span>` : ''}</p>
+          </li>`)}
+      </ol>`}
+  `);
+}
+
+const CUTS = { long: 'én lang påske', split: 'påsken delt i to' };
+
+/** The vote on how Easter is cut: what the choices mean, who voted for what, and the result once counted. */
+export function votePage({ week, vote, today, name, message }) {
+  const days = (cut) => (cut === 'split'
+    ? [periodDays(week, 'split'), periodDays(`${week}b`)]
+    : [periodDays(week, 'long')]).map(({ from, to }) => formatRange(from, to));
+  const open = !vote.result && today < vote.closes;
+  const mine = name ? vote.entries.find((entry) => sameName(entry.name, name)) : null;
+  const choices = [
+    { cut: 'long', value: 'lang', title: 'Én lang påske', text: 'Fra fredag før palmesøndag til 2. påskedag. Én vinner får hele påsken.' },
+    { cut: 'split', value: 'delt', title: 'Påsken delt i to', text: 'Fra fredag til onsdag i påskeuka, og fra onsdag til 2. påskedag. To vinnere får hver sin halvdel.' },
+  ];
+
+  return page({ title: `Påsken ${week.slice(0, 4)}`, name }, html`
+    <h1>Hvordan skal påsken ${week.slice(0, 4)} deles?</h1>
+    <p class="lead">${open
+      ? `Alle har én stemme, og kan ombestemme seg fram til avstemningen stenger ${formatSwap(periodDays(vote.closes).from)}. Står det likt, deles påsken i to.`
+      : vote.result ? resultText(vote.result) : 'Avstemningen er stengt. Når stemmene er talt opp, kan folk melde seg på trekningen.'}</p>
+    ${alert(message)}
+
+    <ul class="vote-choices">
+      ${choices.map(({ cut, value, title, text }) => {
+        const voters = vote.entries.filter((entry) => entry.choice === cut).map((entry) => entry.name);
+        return html`
+          <li class="panel${vote.result?.choice === cut ? ' is-chosen' : ''}">
+            <h2>${title}</h2>
+            <p>${text}</p>
+            <p>${days(cut).join(' og ')}</p>
+            <p>${voters.length === 0 ? 'Ingen stemmer ennå.' : html`${countVotes(voters.length)}: <span class="person">${voters.join(', ')}</span>`}</p>
+            ${open && name ? html`
+              ${mine?.choice === cut ? html`<p><strong>Du har stemt på dette.</strong></p>` : html`
+                <form method="post" action="/paske/${week}/stem">
+                  <input type="hidden" name="valg" value="${value}">
+                  <button class="button">${mine ? 'Bytt til denne' : 'Stem på denne'}</button>
+                </form>`}` : ''}
+          </li>`;
+      })}
+    </ul>
+
+    ${!open && !vote.result ? html`
+      <form method="post" action="/paske/${week}/tell">
+        <button class="button">Tell opp stemmene</button>
+      </form>` : ''}
+    ${open && !name ? html`<p><a href="/">Skriv navnet ditt i hytteboka</a> for å stemme.</p>` : ''}
+    <p><a href="/#${week}">Tilbake til hytteboka</a></p>
+  `);
+}
+
+function resultText({ choice, long, split }) {
+  return `${long} stemte for én lang påske, og ${split} for å dele den i to. Påsken blir ${choice === 'long' ? 'én lang uke' : 'delt i to'}.`;
+}
+
+function countVotes(count) {
+  return `${count} stemme${count === 1 ? '' : 'r'}`;
 }
 
 export function messagePage({ title, text, name }) {
@@ -213,7 +336,7 @@ ${stage ? html`<body class="stage">${content}</body>` : html`<body class="page">
     </form>` : ''}
 </header>
 <main class="content">${content}</main>
-<footer class="bottom"><a href="/">Kalenderen</a> <a href="/kontorsjef">For kontorsjefen</a></footer>
+<footer class="bottom"><a href="/">Kalenderen</a> <a href="/kontorsjef">For kontorsjefen</a> <a href="/logg">Loggen</a></footer>
 </body>`}
 </html>
 `.toString();
