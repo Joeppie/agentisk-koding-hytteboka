@@ -370,6 +370,9 @@ a:active { color: var(--cabin); }
 .week--draw,
 .week--drawn { --state: var(--gold); }
 
+.legend--vote,
+.week--vote { --state: var(--cabin); }
+
 .month {
   display: flex;
   flex-direction: column;
@@ -458,6 +461,22 @@ a:active { color: var(--cabin); }
 }
 
 .tag--draw { background: var(--gold); }
+.tag--vote { color: var(--snow); background: var(--cabin); }
+
+.week--vote { background: color-mix(in oklch, var(--cabin) 8%, var(--paper)); }
+
+/* The vote on how Easter is cut */
+
+.vote-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.vote-choices .panel { border: 1px solid var(--line); border-radius: var(--radius); }
+.vote-choices .is-chosen { border-color: var(--pine); border-width: 2px; }
 
 .person { font-weight: 600; }
 

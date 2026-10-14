@@ -13,6 +13,7 @@ import { openStore } from '../src/store.js';
 
 const NOW = new Date('2026-10-14T10:00:00Z');
 const AUTUMN = '2026-W45';
+const WINTER = '2027-W08';
 const EASTER = '2027-W12';
 
 let server;
@@ -80,9 +81,11 @@ describe('the calendar', () => {
     assert.match(response.headers.get('content-type'), /text\/html/);
     assert.equal(page.match(/<li class="week /g).length, 52);
     assert.match(page, /<h2>Oktober 2026<\/h2>/);
-    assert.match(await card(visitor, '2026-W42'), /^Uke 42 12\.–18\. oktober Denne uka Ledig$/);
-    assert.match(await card(visitor, EASTER), /Uke 12 22\.–28\. mars Trekning · Påske Ingen påmeldt ennå Se trekningen/);
-    assert.match(await card(visitor, '2027-W08'), /Trekning · Vinterferie/);
+    assert.match(await card(visitor, '2026-W42'), /^Uke 42 fre\. 9\. – fre\. 16\. oktober Denne uka Ledig$/);
+    assert.match(await card(visitor, WINTER), /^Uke 8 fre\. 19\. – fre\. 26\. februar Trekning · Vinterferie Ingen påmeldt ennå Se trekningen$/);
+    assert.match(await card(visitor, EASTER), /^Uke 12 fre\. 19\. – man\. 29\. mars Påske · avstemning Én lang påske, eller delt i to\? Stem innen fredag 8\. januar 2027 kl\. 12\. Stem om påsken$/);
+    assert.match(await card(visitor, '2027-W13'), /^Uke 13 man\. 29\. mars – fre\. 2\. april Ledig$/);
+    assert.match(page, /Hytteuka går fra fredag til fredag/);
   });
 
   test('asks who you are, and offers no buttons until it knows', async () => {
@@ -123,9 +126,9 @@ describe('booking', () => {
     assert.equal(response.status, 303);
     assert.equal(response.headers.get('location'), `/#${AUTUMN}`);
 
-    assert.equal(await card(ola, AUTUMN), 'Uke 45 2.–8. november Du har hytta Si fra deg uka');
-    assert.equal(await card(kari, AUTUMN), 'Uke 45 2.–8. november Booket av Ola Nordmann');
-    assert.equal(await card(visitor, AUTUMN), 'Uke 45 2.–8. november Booket av Ola Nordmann');
+    assert.equal(await card(ola, AUTUMN), 'Uke 45 fre. 30. oktober – fre. 6. november Du har hytta Si fra deg uka');
+    assert.equal(await card(kari, AUTUMN), 'Uke 45 fre. 30. oktober – fre. 6. november Booket av Ola Nordmann');
+    assert.equal(await card(visitor, AUTUMN), 'Uke 45 fre. 30. oktober – fre. 6. november Booket av Ola Nordmann');
     assert.equal(book().bookings[AUTUMN].name, 'Ola Nordmann');
   });
 
@@ -164,39 +167,39 @@ describe('booking', () => {
   });
 
   test('a week a winner is drawn for cannot be booked', async () => {
-    const response = await ola.post(`/uker/${EASTER}/book`);
+    const response = await ola.post(`/uker/${WINTER}/book`);
     assert.equal(response.status, 409);
-    assert.match(await response.text(), /Det trekkes lodd om uke 12\. Meld deg på trekningen i stedet\./);
+    assert.match(await response.text(), /Det trekkes lodd om uke 8\. Meld deg på trekningen i stedet\./);
   });
 });
 
 describe('the draw', () => {
   const enterAll = async () => {
     for (const who of [ola, kari, per]) {
-      assert.equal((await who.post(`/uker/${EASTER}/meld-pa`)).status, 303);
+      assert.equal((await who.post(`/uker/${WINTER}/meld-pa`)).status, 303);
     }
   };
   const draw = (form = { klar: 'ja' }, headers = { Accept: 'application/json' }) =>
-    visitor.post(`/trekning/${EASTER}/trekk`, form, headers);
+    visitor.post(`/trekning/${WINTER}/trekk`, form, headers);
 
   test('those who want Easter enter, and can leave again', async () => {
     await enterAll();
-    assert.match(await card(ola, EASTER), /3 påmeldte Du er med i trekningen Meld meg av Se trekningen$/);
-    assert.match(await card(person('Nina Berg'), EASTER), /3 påmeldte Meld meg på Se trekningen$/);
+    assert.match(await card(ola, WINTER), /3 påmeldte Du er med i trekningen Meld meg av Se trekningen$/);
+    assert.match(await card(person('Nina Berg'), WINTER), /3 påmeldte Meld meg på Se trekningen$/);
 
-    assert.equal((await ola.post(`/uker/${EASTER}/meld-pa`)).status, 409);
-    assert.equal((await ola.post(`/uker/${EASTER}/meld-av`)).status, 303);
-    assert.match(await card(ola, EASTER), /2 påmeldte Meld meg på/);
+    assert.equal((await ola.post(`/uker/${WINTER}/meld-pa`)).status, 409);
+    assert.equal((await ola.post(`/uker/${WINTER}/meld-av`)).status, 303);
+    assert.match(await card(ola, WINTER), /2 påmeldte Meld meg på/);
   });
 
   test('the draw page shows a ticket for each, and the button', async () => {
     await enterAll();
-    const response = await visitor.get(`/trekning/${EASTER}`);
+    const response = await visitor.get(`/trekning/${WINTER}`);
     const page = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(page, /<h1>Påske<\/h1>/);
-    assert.match(page, /Uke 12 · 22\.–28\. mars 2027/);
+    assert.match(page, /<h1>Vinterferie<\/h1>/);
+    assert.match(page, /Uke 8 · fre\. 19\. – fre\. 26\. februar 2027/);
     assert.deepEqual(
       [...page.matchAll(/<li class="ticket" data-ticket>([^<]*)<\/li>/g)].map((found) => found[1]),
       ['Ola Nordmann', 'Kari Hansen', 'Per Olsen'],
@@ -216,12 +219,12 @@ describe('the draw', () => {
     assert.deepEqual(drawn.entries, ['Ola Nordmann', 'Kari Hansen', 'Per Olsen']);
     assert.ok([0, 1, 2].includes(drawn.winner));
     const winner = drawn.entries[drawn.winner];
-    assert.equal(book().bookings[EASTER].name, winner);
+    assert.equal(book().bookings[WINTER].name, winner);
 
-    assert.match(await card(visitor, EASTER), new RegExp(`${winner} vant trekningen Se trekningen$`));
-    assert.match(await card(person(winner), EASTER), /Du vant trekningen Si fra deg uka Se trekningen$/);
+    assert.match(await card(visitor, WINTER), new RegExp(`${winner} vant trekningen Se trekningen$`));
+    assert.match(await card(person(winner), WINTER), /Du vant trekningen Si fra deg uka Se trekningen$/);
 
-    const page = await (await visitor.get(`/trekning/${EASTER}`)).text();
+    const page = await (await visitor.get(`/trekning/${WINTER}`)).text();
     assert.match(page, new RegExp(`<p class="winner-name" data-winner-name>${winner}</p>`));
     assert.match(page, /Trukket 14\. oktober 2026 kl\. 12[:.]00 blant 3 påmeldte\./);
     assert.match(page, new RegExp(`<li class="ticket is-winner" data-ticket>${winner}</li>`));
@@ -229,18 +232,18 @@ describe('the draw', () => {
 
     const again = await draw();
     assert.equal(again.status, 409);
-    assert.match((await again.json()).message, new RegExp(`Trekningen om uke 12 er gjort\\. Uka gikk til ${winner}\\.`));
-    assert.equal(book().bookings[EASTER].name, winner);
-    assert.equal((await person('Nina Berg').post(`/uker/${EASTER}/meld-pa`)).status, 409);
+    assert.match((await again.json()).message, new RegExp(`Trekningen om uke 8 er gjort\\. Uka gikk til ${winner}\\.`));
+    assert.equal(book().bookings[WINTER].name, winner);
+    assert.equal((await person('Nina Berg').post(`/uker/${WINTER}/meld-pa`)).status, 409);
   });
 
   test('without scripts the button leads to the page that names the winner', async () => {
     await enterAll();
     const response = await draw({ klar: 'ja' }, {});
     assert.equal(response.status, 303);
-    assert.equal(response.headers.get('location'), `/trekning/${EASTER}`);
-    const page = await (await visitor.get(`/trekning/${EASTER}`)).text();
-    assert.match(page, new RegExp(`data-winner-name>${book().bookings[EASTER].name}<`));
+    assert.equal(response.headers.get('location'), `/trekning/${WINTER}`);
+    const page = await (await visitor.get(`/trekning/${WINTER}`)).text();
+    assert.match(page, new RegExp(`data-winner-name>${book().bookings[WINTER].name}<`));
   });
 
   test('nothing is drawn until the box is ticked, or before someone has entered', async () => {
@@ -259,7 +262,7 @@ describe('the draw', () => {
     const first = await (await draw()).json();
     const winner = first.entries[first.winner];
 
-    assert.equal((await person(winner).post(`/uker/${EASTER}/avbestill`)).status, 303);
+    assert.equal((await person(winner).post(`/uker/${WINTER}/avbestill`)).status, 303);
     const second = await (await draw()).json();
 
     assert.equal(second.entries.length, 2);
@@ -275,15 +278,15 @@ describe('the draw', () => {
 
 describe('for the office manager', () => {
   test('lists the draws, with who has entered', async () => {
-    await ola.post(`/uker/${EASTER}/meld-pa`);
-    await kari.post(`/uker/${EASTER}/meld-pa`);
+    await ola.post(`/uker/${WINTER}/meld-pa`);
+    await kari.post(`/uker/${WINTER}/meld-pa`);
     const page = await (await visitor.get('/kontorsjef')).text();
 
-    assert.match(page, /<strong>Påske<\/strong>\s*<span>Uke 12 · 22\.–28\. mars 2027<\/span>/);
+    assert.match(page, /<strong>Vinterferie<\/strong>\s*<span>Uke 8 · fre\. 19\. – fre\. 26\. februar 2027<\/span>/);
     assert.match(page, /2 påmeldte: <span class="person">Ola Nordmann, Kari Hansen<\/span>/);
-    assert.match(page, new RegExp(`href="/trekning/${EASTER}">Åpne trekningen`));
-    assert.match(page, /<option value="2026-W45">Uke 45 · 2\.–8\. november 2026<\/option>/);
-    assert.doesNotMatch(page, /<option value="2027-W12">/, 'a week that is set up is not offered again');
+    assert.match(page, new RegExp(`href="/trekning/${WINTER}">Åpne trekningen`));
+    assert.match(page, /<option value="2026-W45">Uke 45 · fre\. 30\. oktober – fre\. 6\. november 2026<\/option>/);
+    assert.doesNotMatch(page, /<option value="2027-W08">/, 'a week that is set up is not offered again');
   });
 
   test('sets a week up for a draw, and makes it an ordinary week again while nobody has entered', async () => {
@@ -303,12 +306,66 @@ describe('for the office manager', () => {
     assert.equal(booked.status, 409);
     assert.match(await booked.text(), /role="alert">Uke 45 er allerede booket av Ola Nordmann/);
 
-    await kari.post(`/uker/${EASTER}/meld-pa`);
-    const entered = await visitor.post(`/kontorsjef/trekningsuker/${EASTER}/fjern`);
+    await kari.post(`/uker/${WINTER}/meld-pa`);
+    const entered = await visitor.post(`/kontorsjef/trekningsuker/${WINTER}/fjern`);
     assert.equal(entered.status, 409);
-    assert.match(await entered.text(), /1 har meldt seg på trekningen om uke 12/);
+    assert.match(await entered.text(), /1 har meldt seg på trekningen om uke 8/);
 
     assert.equal((await visitor.post('/kontorsjef/trekningsuker', {})).status, 404);
+  });
+});
+
+describe('the vote on Easter', () => {
+  /** Moves the clock on, keeping the same book. */
+  const at = (moment) => {
+    server.app = createApp({ store: openStore(file, () => firstState(NOW)), now: () => new Date(moment) });
+  };
+
+  test('everyone sees the choices, who voted for what, and when it closes', async () => {
+    assert.equal((await ola.post(`/paske/${EASTER}/stem`, { valg: 'lang' })).status, 303);
+    assert.equal((await kari.post(`/paske/${EASTER}/stem`, { valg: 'delt' })).status, 303);
+    assert.equal((await per.post(`/paske/${EASTER}/stem`, { valg: 'delt' })).status, 303);
+
+    const page = await (await visitor.get(`/paske/${EASTER}`)).text();
+    assert.match(page, /<h1>Hvordan skal påsken 2027 deles\?<\/h1>/);
+    assert.match(page, /stenger fredag 8\. januar 2027 kl\. 12\. Står det likt, deles påsken i to\./);
+    assert.match(page, /fre\. 19\. – man\. 29\. mars 2027/);
+    assert.match(page, /fre\. 19\. – ons\. 24\. mars 2027 og ons\. 24\. – man\. 29\. mars 2027/);
+    assert.match(page, /1 stemme: <span class="person">Ola Nordmann<\/span>/);
+    assert.match(page, /2 stemmer: <span class="person">Kari Hansen, Per Olsen<\/span>/);
+    assert.doesNotMatch(page, /Tell opp stemmene/, 'nothing to count while it is open');
+  });
+
+  test('someone who voted can change their mind, and sees what they voted for', async () => {
+    await ola.post(`/paske/${EASTER}/stem`, { valg: 'lang' });
+    assert.match(await (await ola.get(`/paske/${EASTER}`)).text(), /Du har stemt på dette[\s\S]*Bytt til denne/);
+    await ola.post(`/paske/${EASTER}/stem`, { valg: 'delt' });
+    assert.deepEqual(book().votes[EASTER].entries.map((entry) => entry.choice), ['split']);
+  });
+
+  test('turns away a vote for something else, and a count before it closes', async () => {
+    const odd = await ola.post(`/paske/${EASTER}/stem`, { valg: 'tre dager' });
+    assert.equal(odd.status, 400);
+    assert.match(await odd.text(), /Velg én lang påske eller påsken delt i to/);
+    assert.equal((await visitor.post(`/paske/${EASTER}/tell`)).status, 409);
+    assert.equal((await visitor.get('/paske/2027-W13')).status, 404);
+  });
+
+  test('once closed, anyone can count, and then Easter can be drawn for', async () => {
+    await ola.post(`/paske/${EASTER}/stem`, { valg: 'delt' });
+    at('2027-01-08T11:00:00Z');
+    assert.equal((await ola.post(`/paske/${EASTER}/stem`, { valg: 'lang' })).status, 409);
+    assert.match(await (await visitor.get(`/paske/${EASTER}`)).text(), /Tell opp stemmene/);
+
+    assert.equal((await person('Gro Berg').post(`/paske/${EASTER}/tell`)).status, 303);
+    assert.match(await (await visitor.get(`/paske/${EASTER}`)).text(), /0 stemte for én lang påske, og 1 for å dele den i to\. Påsken blir delt i to\./);
+    assert.match(await card(visitor, EASTER), /^Uke 12 fre\. 19\. – ons\. 24\. mars Trekning · Påske, første del/);
+    assert.match(await card(visitor, `${EASTER}b`), /^Uke 12, del 2 ons\. 24\. – man\. 29\. mars Trekning · Påske, andre del/);
+    assert.equal((await kari.post(`/uker/${EASTER}b/meld-pa`)).status, 303);
+
+    const log = await (await visitor.get('/logg')).text();
+    assert.match(log, /Ola Nordmann<\/span> stemte for påsken delt i to/);
+    assert.match(log, /Stemmene om påsken ble talt opp\./);
   });
 });
 
@@ -316,9 +373,9 @@ describe('what the server is careful about', () => {
   test('a name is shown as it was typed, never read as markup', async () => {
     const rascal = person('<img src=x onerror=alert(1)>');
     await rascal.post(`/uker/${AUTUMN}/book`);
-    await rascal.post(`/uker/${EASTER}/meld-pa`);
+    await rascal.post(`/uker/${WINTER}/meld-pa`);
 
-    for (const path of ['/', '/kontorsjef', `/trekning/${EASTER}`]) {
+    for (const path of ['/', '/kontorsjef', `/trekning/${WINTER}`]) {
       const page = await (await kari.get(path)).text();
       assert.doesNotMatch(page, /<img/, path);
       assert.match(page, /&lt;img src=x onerror=alert\(1\)&gt;/, path);
@@ -366,8 +423,8 @@ describe('what the server is careful about', () => {
 describe('the log page', () => {
   test('shows what was done and how it was drawn, with the name of whoever pressed', async () => {
     await ola.post(`/uker/${AUTUMN}/book`);
-    await person('Kari Hansen').post(`/uker/${EASTER}/meld-pa`);
-    await person('Gro Berg').post(`/trekning/${EASTER}/trekk`, { klar: 'ja' });
+    await person('Kari Hansen').post(`/uker/${WINTER}/meld-pa`);
+    await person('Gro Berg').post(`/trekning/${WINTER}/trekk`, { klar: 'ja' });
 
     const text = await (await visitor.get('/logg')).text();
     assert.match(text, /Ola Nordmann<\/span> booket uka/);
